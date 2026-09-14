@@ -1,0 +1,167 @@
+type keyword = 
+  | For
+  | If
+  | Inclusive
+  | End
+  | Then
+  | Return [@@deriving show];;
+
+type seperator =
+  | Colon
+  | Semicolon
+  | OpenParen
+  | ClosedParen
+  | OpenBracket
+  | ClosedBracket
+  | Newline [@@deriving show];;
+
+type operator = 
+  | Eq
+  | Deq (* == *)
+  | Le
+  | Leq
+  | Ge
+  | Geq
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | Mod
+  (* Boolean operators *)
+  | And
+  | Or
+  | Xor [@@deriving show];;
+
+type token = 
+  | Ident of string
+  | Keyword of keyword
+  | Seperator of seperator
+  | Operator of operator
+  | ConstInt of int
+  | ConstFloat of float
+  | ConstStr of string
+  | Nop;;
+
+let token_of_ident ident = Ident ident
+let token_of_keyword kw = Keyword kw
+let token_of_seperator sep = Seperator sep
+let token_of_operator op = Operator op
+
+let token_of_const_numeral numstr = match numstr with
+(* Because ocaml's int_of_string is so good, we don't need to implement these cases *)
+(* Replace if we wan't more custom parsing later *)
+(* | hex when String.starts_with ~prefix:"0x" hex -> ConstInt (int_of_string hex) *)
+(* | binary when String.starts_with ~prefix:"0b" binary -> ConstInt (int_of_string binary) *)
+| float when String.contains float '.' -> ConstFloat (float_of_string float)
+| regular -> ConstInt (int_of_string regular);;
+
+let seperators = [
+  (";", Semicolon);
+  (":", Colon);
+  ("(", OpenParen);
+  (")", ClosedParen);
+  ("[", OpenBracket);
+  ("]", ClosedBracket);
+  ("\n", Newline)
+];;
+
+let operators = [
+  (">=", Geq);
+  ("<=", Leq);
+  ("==", Deq);
+  ("<", Le);
+  (">", Ge);
+  ("=", Eq);
+  ("+", Add);
+  ("-", Sub);
+  ("*", Mul);
+  ("/", Div);
+  ("%", Mod);
+  ("&&", And);
+  ("||", Or);
+  ("^", Xor);
+];;
+
+let keywords = [
+ ("for", For);
+ ("if", If);
+ ("inclusive", Inclusive);
+ ("end", End);
+ ("then", Then);
+ ("return", Return);
+];;
+
+(* Hopefully this is equal to ^[a-zA-Z][a-zA-Z0-9_]* because I only know normal regex lmao *)
+let ident_regex =
+  let open Re in
+  seq [
+    bos;
+    alt [rg 'A' 'Z'; rg 'a' 'z'; char '_'];
+    rep (alt [rg 'A' 'Z'; rg 'a' 'z'; rg '0' '9'; char '_'])
+  ] |> compile;;
+
+(* ^(0x[0-9A-F_]+)|(0b[01_]+)|(-?[0-9_]+\.?[0-9_]* ) *)
+(* without the groups, allows for underscores, hex, and binary *)
+let numerical_regex =
+  let open Re in
+  seq [
+    bos;
+    alt[
+      seq[char '0'; char 'x'; rep1(alt[rg '0' '9'; rg 'A' 'F'; char '_'])];
+      seq[char '0'; char 'b'; rep1(alt[char '0'; char '1'])];
+      seq[opt(char '-'); rep1(alt[rg '0' '9'; char '_']); opt(char '.'); rep(alt[rg '0' '9'; char '_'])]
+    ]
+  ] |> compile
+
+(* Our two general purpose map functions *)
+let rec parse_mapped string map = match map with
+| [] -> None
+| (pfx, tok)::t -> 
+    if String.starts_with ~prefix:pfx string then 
+      let remaining = String.drop_first (String.length pfx) string in
+      Some(tok, remaining) 
+    else parse_mapped string t;;
+
+let parse_rgx string rgx = match Re.exec_opt rgx string with
+| Some g -> let v = Re.Group.get g 0 in
+              let remaining = String.drop_first (String.length v) string in
+              Some (v, remaining)
+| None -> None;;
+
+(* Go from most to least specific *)
+(* Really ugly :( *)
+let rec parse_tok string = match String.drop_first_while (fun c -> c == ' ') string with 
+| str when Option.is_some(parse_mapped str operators) ->
+    let (tok, rem) = Option.get(parse_mapped str operators) in 
+      token_of_operator tok :: parse_tok(rem)      
+
+| str when Option.is_some(parse_mapped str seperators) ->
+    let (tok, rem) = Option.get(parse_mapped str seperators) in 
+      token_of_seperator tok :: parse_tok(rem)
+
+| str when Option.is_some(parse_mapped str keywords) ->
+    let (tok, rem) = Option.get(parse_mapped str keywords) in 
+      token_of_keyword tok :: parse_tok(rem)
+
+| str when Option.is_some(parse_rgx str numerical_regex) ->
+    let (tok, rem) = Option.get(parse_rgx str numerical_regex) in 
+      token_of_ident tok :: parse_tok(rem)
+
+| str when Option.is_some(parse_rgx str ident_regex) ->
+    let (tok, rem) = Option.get(parse_rgx str ident_regex) in 
+      token_of_ident tok :: parse_tok(rem)
+| _ -> [];;
+
+let string_of_token_debug t = match t with
+| Ident iden -> "Ident(\"" ^ iden ^ "\")"
+| Operator op -> "Operator(" ^ show_operator op ^ ")"
+| Seperator sep -> "Seperator(" ^ show_seperator sep ^ ")"
+| Keyword kw -> "Keyword(" ^ show_keyword kw ^ ")"
+| ConstInt ci -> "Const(" ^ string_of_int ci ^ ")"
+| ConstFloat cf -> "Const(" ^ string_of_float cf ^ ")"
+| ConstStr cs -> "Const(\"" ^ cs ^ "\")"
+| Nop -> "Nop";;
+
+let rec string_of_tok_list_debug l = match l with
+| [] -> ""
+| h::t -> string_of_token_debug h ^ ", " ^ string_of_tok_list_debug t;;
