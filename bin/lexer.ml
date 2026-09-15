@@ -16,6 +16,10 @@ type seperator =
   | Newline [@@deriving show];;
 
 type operator = 
+  (* these operators exists but are parsed weirdly *)
+  | Index
+  | Dot
+
   | Eq
   | Deq (* == *)
   | Le
@@ -80,6 +84,7 @@ let operators = [
   ("&&", And);
   ("||", Or);
   ("^", Xor);
+  (".", Dot)
 ];;
 
 let keywords = [
@@ -130,36 +135,36 @@ let parse_rgx string rgx = match Re.exec_opt rgx string with
 
 (* Go from most to least specific *)
 (* Really ugly :( *)
-let rec parse_tok string = match String.drop_first_while (fun c -> c == ' ') string with 
+let rec parse string = match String.drop_first_while (fun c -> c == ' ') string with 
 | str when Option.is_some(parse_mapped str operators) ->
     let (tok, rem) = Option.get(parse_mapped str operators) in 
-      token_of_operator tok :: parse_tok(rem)      
+      token_of_operator tok :: parse(rem)      
 
 | str when Option.is_some(parse_mapped str seperators) ->
     let (tok, rem) = Option.get(parse_mapped str seperators) in 
-      token_of_seperator tok :: parse_tok(rem)
+      token_of_seperator tok :: parse(rem)
 
 | str when Option.is_some(parse_mapped str keywords) ->
     let (tok, rem) = Option.get(parse_mapped str keywords) in 
-      token_of_keyword tok :: parse_tok(rem)
+      token_of_keyword tok :: parse(rem)
 
 | str when Option.is_some(parse_rgx str numerical_regex) ->
     let (tok, rem) = Option.get(parse_rgx str numerical_regex) in 
-      token_of_ident tok :: parse_tok(rem)
+      token_of_const_numeral tok :: parse(rem)
 
 | str when Option.is_some(parse_rgx str ident_regex) ->
     let (tok, rem) = Option.get(parse_rgx str ident_regex) in 
-      token_of_ident tok :: parse_tok(rem)
+      token_of_ident tok :: parse(rem)
 | _ -> [];;
 
 let string_of_token_debug t = match t with
-| Ident iden -> "Ident(\"" ^ iden ^ "\")"
+| Ident iden -> "Ident(" ^ iden ^ ")"
 | Operator op -> "Operator(" ^ show_operator op ^ ")"
 | Seperator sep -> "Seperator(" ^ show_seperator sep ^ ")"
 | Keyword kw -> "Keyword(" ^ show_keyword kw ^ ")"
 | ConstInt ci -> "Const(" ^ string_of_int ci ^ ")"
 | ConstFloat cf -> "Const(" ^ string_of_float cf ^ ")"
-| ConstStr cs -> "Const(\"" ^ cs ^ "\")"
+| ConstStr cs -> "Const( ^ cs ^ )"
 | Nop -> "Nop";;
 
 let rec string_of_tok_list_debug l = match l with
