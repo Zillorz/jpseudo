@@ -6,7 +6,9 @@ type ast =
   (* An expression of bool and the loop body *)
   | While of Expr.expression * ast
   (* An expression of bool, the if body, and the else(if) body *)
-  | If of Expr.expression * ast * ast option [@@deriving show];;
+  | If of Expr.expression * ast * ast option
+  (* args and body **)
+  | Function of string list * ast [@@deriving show];;
 
 (* utility functions *)
 let ensure_seperator: Lexer.seperator -> Lexer.token list -> string -> Lexer.token list = fun ensure toks reason ->
@@ -51,7 +53,7 @@ let rec parse_ast: Lexer.token list -> ast list * Lexer.token list = fun toks ->
   )
 
   (* If is special, and complicated *) 
-  | (Keyword Lexer.If)::t -> (
+  | (Keyword Lexer.If)::toks -> (
       let (condition, toks) = Expr.parse_next_expression toks in
       let toks = ensure_seperator Lexer.Colon toks "expected if condition to end with colon" in
       let (body, toks) = parse_ast toks in
@@ -60,7 +62,7 @@ let rec parse_ast: Lexer.token list -> ast list * Lexer.token list = fun toks ->
       | (Keyword Lexer.End)::(Keyword Lexer.If)::toks ->
           add_ast (If (condition, Block body, None)) (parse_ast toks)
       | (Keyword Lexer.Else)::(Keyword Lexer.If)::toks -> (
-          let (remaining_ast, remaining_toks) = parse_ast toks in
+          let (remaining_ast, remaining_toks) = parse_ast ((Keyword Lexer.If)::toks) in
 
           match remaining_ast with
           | else_if_ast::remaining_ast ->
@@ -76,15 +78,30 @@ let rec parse_ast: Lexer.token list -> ast list * Lexer.token list = fun toks ->
           add_ast (If (condition, Block body, Some (Block else_body))) (parse_ast toks)
       | _ -> failwith "if statement must end with 'end if', 'else if' or 'else'"
   )
+
+  | (Keyword Lexer.Function)::toks -> (
+    let (name, toks) = match toks with
+    | (Lexer.Ident name)::toks -> (name, toks)
+    | _ -> failwith "function keyword must be followed by function name" in
+    let toks = ensure_seperator Lexer.OpenParen toks "function name must be followed by (" in
+    let (args, toks) = Lexer.parse_function_args toks in
+    let toks = ensure_seperator Lexer.Colon toks "function definition must be followed by :" in
+    let (body, toks) = parse_ast toks in
+    let toks = ensure_end_of Lexer.Function toks "function must be closed with 'end function'" in
+
+    add_ast (Function (args, Block body)) (parse_ast toks)
+  )
   | [] -> ([], [])
   (* if all else fails, parse a expression *)
-  | toks -> 
+  | toks ->
       let (expression, toks) = Expr.parse_next_expression toks in
-      
+
+      let () = print_endline (Expr.show_expression expression) in
+
       match toks with
-      | (Seperator Lexer.Semicolon)::toks | (Seperator Lexer.Newline)::toks ->
+      | (Seperator Lexer.Semicolon)::toks | (Seperator Lexer.Newline)::toks -> 
           add_ast (Expression expression) (parse_ast toks)
       | [] -> ([Expression expression], toks)
-      | _ -> failwith "expression must be followed by newline, semicolon, or EOF"
+      | tok::_ -> failwith ("expression must be followed by newline, semicolon, or EOF, found " ^ Lexer.string_of_token_debug tok)
 
 let parse: Lexer.token list -> ast list = fun toks -> match parse_ast toks with | (a, b) -> a;;

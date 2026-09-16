@@ -63,17 +63,7 @@ val token_of_operator : operator -> token;;
 val token_of_const_numeral : string -> token;;
 
 val parse : string -> token list;;
-
-val string_of_token_debug : token -> string;;
-val string_of_tok_list_debug : token list -> string;;
-
-val token_of_ident : string -> token;;
-val token_of_keyword : keyword -> token;;
-val token_of_seperator : seperator -> token;;
-val token_of_operator : operator -> token;;
-val token_of_const_numeral : string -> token;;
-
-val parse : string -> token list;;
+val parse_function_args: token list -> string list * token list;;
 
 val string_of_token_debug : token -> string;;
 val string_of_tok_list_debug : token list -> string;;

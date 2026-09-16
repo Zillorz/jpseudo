@@ -92,8 +92,8 @@ let rec parse_expr toks min_bp =
       parse_partial_expr (List []) toks min_bp
   )
 
-  | (Seperator Lexer.OpenBracket)::t -> (
-      let (list, toks) = parse_next_expression t in
+  | (Seperator Lexer.OpenBracket)::toks -> (
+      let (list, toks) = parse_next_expression toks in
       let toks = ensure_seperator Lexer.ClosedBracket toks
         (fun t -> "(lst) Expected ] found " ^ Lexer.string_of_token_debug t)
         "(lst) Bracket not matched" in
@@ -124,7 +124,7 @@ and parse_partial_expr lhs toks min_bp =
         if l_bp < min_bp then
           (lhs, toks)
         else
-          let (rhs, list) = parse_expr toks r_bp in
+          let (rhs, toks) = parse_expr toks r_bp in
           parse_partial_expr (Cons (op, lhs, rhs)) toks min_bp
     | None -> (lhs, toks)
   )
@@ -152,7 +152,7 @@ and parse_partial_expr lhs toks min_bp =
 
       let args = (List (List.rev (flatten_comma_list args))) in
 
-      parse_partial_expr (Unit (Lexer.Call, args)) toks min_bp
+      parse_partial_expr (Cons (Lexer.Call, lhs, args)) toks min_bp
   )
 
   (* If we didn't find an operator, we just return *)

@@ -173,6 +173,17 @@ let rec parse string = match String.drop_first_while (fun c -> c == ' ') string 
       token_of_ident tok :: parse(rem)
 | _ -> [];;
 
+let rec parse_function_args tokens =
+  match tokens with
+  | (Ident arg_name)::(Operator Comma)::toks ->
+      let (args, rtoks) = parse_function_args toks in
+      (arg_name :: args, rtoks)
+  | (Ident arg_name)::(Seperator ClosedParen)::toks ->
+      ([arg_name], toks)
+  | (Seperator ClosedParen)::toks ->
+      ([], toks)
+  | _ -> failwith("Invalid function args");;
+
 let string_of_token_debug t = match t with
 | Ident iden -> "Ident(" ^ iden ^ ")"
 | Operator op -> "Operator(" ^ show_operator op ^ ")"
