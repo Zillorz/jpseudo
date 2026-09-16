@@ -8,6 +8,7 @@ type ast =
   (* An expression of bool, the if body, and the else(if) body *)
   | If of Expr.expression * ast * ast option
   (* args and body **)
-  | Function of string list * ast [@@deriving show];;
+  | Function of string list * ast
+[@@deriving show]
 
-val parse: Lexer.token list -> ast list;;
+val parse : Lexer.token list -> ast list

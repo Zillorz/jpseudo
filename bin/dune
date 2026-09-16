@@ -1,5 +1,6 @@
 (executable
  (public_name jpseudo)
  (name main)
- (preprocess (pps ppx_deriving.show))
+ (preprocess
+  (pps ppx_deriving.show))
  (libraries jpseudo re))
