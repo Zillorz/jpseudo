@@ -13,7 +13,10 @@ type atom =
 type expression =  
   | Atom of atom
   | Unit of Lexer.operator * expression
-  | Cons of Lexer.operator * expression * expression [@@deriving show];;
+  | Cons of Lexer.operator * expression * expression
+  | List of expression list [@@deriving show];;
 
-val condense: Lexer.token list -> expression;;
-val extract_atom: Lexer.token list -> expression * Lexer.token list;;
+val parse_next_expression: Lexer.token list -> expression * Lexer.token list;;
+val parse_expression: Lexer.token list -> expression;;
+(* val cond: expression option -> Lexer.token list -> int -> expression * Lexer.token list *)
+(* val extract_atom: Lexer.token list -> expression * Lexer.token list;; *)

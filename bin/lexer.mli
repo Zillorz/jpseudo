@@ -1,10 +1,10 @@
 type keyword = 
+  | Function
   | For
+  | While
   | If
-  | Inclusive
-  | End
-  | Then
-  | Return [@@deriving show];;
+  | Else
+  | End [@@deriving show];;
 
 type seperator =
   | Colon
@@ -18,19 +18,29 @@ type seperator =
 type operator = 
   (* these operators exists but are parsed weirdly *)
   | Index
-  | Dot
+  | Comma
+  | Call
+  | Return
+
+  (* operators for iterators *)
+  | Downto
+  | To
+  | Inclusive
 
   | Eq
   | Deq (* == *)
+  | Lt
   | Le
-  | Leq
+  | Gt
   | Ge
-  | Geq
   | Add
   | Sub
   | Mul
   | Div
+  | IntDiv (* // *)
   | Mod
+  (* a.b *)
+  | Dot
   (* Boolean operators *)
   | And
   | Or
@@ -45,6 +55,17 @@ type token =
   | ConstFloat of float
   | ConstStr of string
   | Nop;;
+
+val token_of_ident : string -> token;;
+val token_of_keyword : keyword -> token;;
+val token_of_seperator : seperator -> token;;
+val token_of_operator : operator -> token;;
+val token_of_const_numeral : string -> token;;
+
+val parse : string -> token list;;
+
+val string_of_token_debug : token -> string;;
+val string_of_tok_list_debug : token list -> string;;
 
 val token_of_ident : string -> token;;
 val token_of_keyword : keyword -> token;;

@@ -1,3 +1,6 @@
+(* uses pratt parsing *)
+(* https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html *)
+
 (* Subset of Token for values/variables *)
 type atom = 
   | IntValue of int
@@ -7,115 +10,155 @@ type atom =
 
 (* 
    An atom is the simplest object that than can be operated on.
-   A unit is an expression applied to one other expression
-   A cons is an expression applied to two expressions
+   A unit is an operator applied to one other expression
+   A cons is an operator applied to two expressions
+   A list is a collection of expressions, more complex operators use this + unit for many expressions
 *)
 type expression =  
   | Atom of atom
   | Unit of Lexer.operator * expression
-  | Cons of Lexer.operator * expression * expression [@@deriving show];;
+  | Cons of Lexer.operator * expression * expression
+  | List of expression list [@@deriving show];;
 
 (* Assigns order of operations *)
-let prefix_bp o = match o with
-| Lexer.Mul -> 14
-| Lexer.Sub -> 13
-| _ -> failwith("Operator " ^ Lexer.show_operator o ^ " does not support prefix");;
+let prefix_bp operator = match operator with
+| Lexer.Return -> 1
+| Lexer.Mul -> 20
+| Lexer.Sub -> 19
+| _ -> failwith ("Operator " ^ Lexer.show_operator operator ^ " does not support prefix");;
 
-let postfix_bp o = match o with
+let postfix_bp operator = match operator with
+| Lexer.Inclusive -> Some 8
 | _ -> None;;
 
-let infix_bp o = match o with
-| Lexer.Eq -> Some (1, 2)
-| Lexer.Or | Lexer.Xor -> Some(3, 4)
-| Lexer.And -> Some(5, 6)
-| Lexer.Deq | Lexer.Le | Lexer.Leq | Lexer.Ge | Lexer.Geq -> Some(7, 8)
-| Lexer.Add | Lexer.Sub -> Some (9, 10)
-| Lexer.Mul | Lexer.Div | Lexer.Mod -> Some (11, 12)
-| Lexer.Dot -> Some (15, 16)
+let infix_bp operator = match operator with
+| Lexer.Eq -> Some (2, 3)
+| Lexer.Comma -> Some(4, 5)
+| Lexer.To | Lexer.Downto -> Some(6, 7)
+| Lexer.Or | Lexer.Xor -> Some(9, 10)
+| Lexer.And -> Some(11, 12)
+| Lexer.Deq | Lexer.Le | Lexer.Lt | Lexer.Gt | Lexer.Ge -> Some(13, 14)
+| Lexer.Add | Lexer.Sub -> Some (15, 16)
+| Lexer.Mul | Lexer.Div | Lexer.IntDiv | Lexer.Mod -> Some (17, 18)
+| Lexer.Dot -> Some (21, 22)
 | _ -> None;;
 
-(* uses pratt parsing *)
-(* https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html *)
-let rec extract_atom: Lexer.token list -> expression * Lexer.token list = fun l ->
-  match l with
-  | (Lexer.ConstInt ci)::t -> (Atom (IntValue ci), t)
-  | (Lexer.ConstFloat cf)::t -> (Atom (FloatValue cf), t)
-  | (Lexer.ConstStr cs)::t -> (Atom (StringValue cs), t)
-  | (Lexer.Ident id)::t -> (Atom (Variable id), t)
-  | h::t -> failwith("Unexpected Token " ^ (Lexer.string_of_token_debug h))
-  | _ -> failwith("Cannot extract atom from empty tokens")
-  
+(* utility functions *)
+let ensure_seperator:
+  Lexer.seperator -> Lexer.token list -> (Lexer.token -> string) -> string -> Lexer.token list =
+    fun ensure toks reason_wrong reason_missing ->
 
-(* this function is magic, it works perfectly, but is super confusing *)
-let rec cond: expression option -> Lexer.token list -> int -> expression * Lexer.token list = fun lhs list min_bp ->
-  (* This function can be called two ways, either with some inital LHS expression or without*)
-  match lhs with
+  match toks with
+  | (Seperator ensure)::toks -> toks
+  | [] -> failwith reason_missing
+  | tok::toks -> failwith (reason_wrong tok);;
 
-  (* The inital lhs expression exists *)
-  | Some lhs -> (
+let rec extract_atom: Lexer.token list -> expression * Lexer.token list = fun list ->
   match list with
-  (* Our token list must start with an operator, or we quit *)
-  | (Lexer.Operator op)::t -> (
-    match postfix_bp(op), infix_bp(op) with
-    | Some pf_bp, None -> (* postfix op *)
-        if (pf_bp < min_bp) then
-          (lhs, list)
-        else
-          let lhs = Unit (op, lhs) in
-          (cond (Some lhs) t min_bp)
+  | (Lexer.ConstInt const)::toks -> (Atom (IntValue const), toks)
+  | (Lexer.ConstFloat const)::toks -> (Atom (FloatValue const), toks)
+  | (Lexer.ConstStr const)::toks -> (Atom (StringValue const), toks)
+  | (Lexer.Ident ident)::toks -> (Atom (Variable ident), toks)
+  | other_tok::_ -> failwith("Cannot extract atom: " ^ (Lexer.string_of_token_debug other_tok))
+  | _ -> failwith("Cannot extract atom from nothing")
 
-    | _, Some (l_bp, r_bp) -> (* infix op *)
-        if l_bp < min_bp then
-          (lhs, list)
-        else
-          let (expr, list) = cond None t r_bp in
-          let lhs = Cons (op, lhs, expr) in
-          (cond (Some lhs) list min_bp)
+let rec flatten_comma_list: expression -> expression list = fun comma_list_exp ->
+  match comma_list_exp with
+  | Cons (Lexer.Comma, comma_list, element) ->
+      (* Maybe check if e2 is a comma list and flatten? opt for now *)
+      element :: (flatten_comma_list comma_list)
+  | element -> [element]
 
-    | _, _ -> (lhs, list) (* neither *)
-  )
-
-
-  (* Special case for indexing *)
-  | (Lexer.Seperator ob)::t when ob == Lexer.OpenBracket -> ( 
-        let (expr, list) = cond None t 0 in
-        
-        match list with
-        | (Lexer.Seperator s)::t when s == Lexer.ClosedBracket ->
-            let lhs = Cons (Lexer.Index, lhs, expr) in
-            cond (Some lhs) t min_bp
-        | h::t -> failwith("Expected ] found " ^ Lexer.string_of_token_debug h)
-        | [] -> failwith("Bracket not matched.")
-  )
-
-  (* If we didn't find an operator, we just return *)
-  | _ -> (lhs, list) 
-  )
-
-
-  (* In this case, there is no LHS, so we start anew *)
-  | None ->
-  match list with
-  (* If the list starts with an operator, it must be a prefix operator, as there is no LHS for infix*)
-  | (Lexer.Operator op)::t ->
-      let (expr, list) = cond None t (prefix_bp op) in
+let rec parse_expr toks min_bp =
+  match toks with
+  (* If the tokens start with an operator, it must be a prefix operator *)
+  | (Lexer.Operator op)::toks ->
+      let (expr, toks) = parse_expr toks (prefix_bp op) in
       let lhs = Unit (op, expr) in
-      cond (Some lhs) list min_bp
+      parse_partial_expr lhs toks min_bp
 
   (* Parenthesis support *)
-  | (Lexer.Seperator s)::t when s == Lexer.OpenParen -> ( 
-      let (expr, list) = cond None t 0 in
-      
-      match list with
-      | (Lexer.Seperator s)::t when s == Lexer.ClosedParen ->
-          cond (Some expr) t min_bp
-      | h::t -> failwith("Expected ), found " ^ Lexer.string_of_token_debug h)
-      | _ -> failwith("Parenthesis not matched")
+  | (Seperator Lexer.OpenParen)::toks -> (
+      let (expr, toks) = parse_next_expression toks in
+      let toks = ensure_seperator Lexer.ClosedParen toks
+        (fun t -> "Expected ) found ^ " ^ Lexer.string_of_token_debug t)
+        "Parenthesis not matched" in
+ 
+      parse_partial_expr expr toks min_bp
+  )
+
+  (* Bracket list support *)
+  | (Seperator Lexer.OpenBracket)::(Seperator Lexer.ClosedBracket)::toks -> (
+      parse_partial_expr (List []) toks min_bp
+  )
+
+  | (Seperator Lexer.OpenBracket)::t -> (
+      let (list, toks) = parse_next_expression t in
+      let toks = ensure_seperator Lexer.ClosedBracket toks
+        (fun t -> "(lst) Expected ] found " ^ Lexer.string_of_token_debug t)
+        "(lst) Bracket not matched" in
+      let list = (List (List.rev (flatten_comma_list list))) in
+
+      parse_partial_expr list toks min_bp
   )
 
   (* In the basic case, extract the first atom and start the loop/upper match *)
   | _ ->
-      let (atom, list) = extract_atom list in
-      cond (Some atom) list min_bp
+      let (atom, toks) = extract_atom toks in
+      parse_partial_expr atom toks min_bp
+and parse_partial_expr lhs toks min_bp =
 
-let rec condense list = match cond None list 0 with | (a, b) -> a;;
+  match toks with
+  (* Our token list must start with an operator *)
+  | (Lexer.Operator op)::toks -> (
+    match postfix_bp op with
+    | Some pf_bp ->
+      if pf_bp < min_bp then
+        (lhs, toks)
+      else
+        parse_partial_expr (Unit (op, lhs)) toks min_bp
+    | None ->
+
+    match infix_bp op with
+    | Some (l_bp, r_bp) ->
+        if l_bp < min_bp then
+          (lhs, toks)
+        else
+          let (rhs, list) = parse_expr toks r_bp in
+          parse_partial_expr (Cons (op, lhs, rhs)) toks min_bp
+    | None -> (lhs, toks)
+  )
+
+  (* Special case for indexing *)
+  | (Seperator Lexer.OpenBracket)::toks -> (
+        let (index, toks) = parse_next_expression toks in
+        let toks = ensure_seperator Lexer.ClosedBracket toks
+          (fun t -> "(idx) Expected ] found " ^ Lexer.string_of_token_debug t)
+          "(idx) Bracket not matched" in
+
+        parse_partial_expr (Cons (Lexer.Index, lhs, index)) toks min_bp
+  )
+
+  (* Special case for function calls *)
+  | (Seperator Lexer.OpenParen)::(Seperator Lexer.ClosedParen)::toks -> (
+      parse_partial_expr (List []) toks min_bp
+  )
+
+  | (Seperator Lexer.OpenParen)::toks -> (
+      let (args, toks) = parse_next_expression toks in
+      let toks = ensure_seperator Lexer.ClosedParen toks
+        (fun t -> "(call) Expected ) found " ^ Lexer.string_of_token_debug t)
+        "(call) Parenthesis not matched" in
+
+      let args = (List (List.rev (flatten_comma_list args))) in
+
+      parse_partial_expr (Unit (Lexer.Call, args)) toks min_bp
+  )
+
+  (* If we didn't find an operator, we just return *)
+  | _ -> (lhs, toks) 
+and parse_next_expression toks =
+  parse_expr toks 0
+;;
+
+let parse_expression list = match parse_next_expression list with | (a, b) -> a;;

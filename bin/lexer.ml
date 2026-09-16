@@ -1,10 +1,10 @@
 type keyword = 
+  | Function
   | For
+  | While
   | If
-  | Inclusive
-  | End
-  | Then
-  | Return [@@deriving show];;
+  | Else
+  | End [@@deriving show];;
 
 type seperator =
   | Colon
@@ -18,19 +18,29 @@ type seperator =
 type operator = 
   (* these operators exists but are parsed weirdly *)
   | Index
-  | Dot
+  | Comma
+  | Call
+  | Return
+
+  (* operators for iterators *)
+  | Downto
+  | To
+  | Inclusive
 
   | Eq
   | Deq (* == *)
+  | Lt
   | Le
-  | Leq
+  | Gt
   | Ge
-  | Geq
   | Add
   | Sub
   | Mul
   | Div
+  | IntDiv (* // *)
   | Mod
+  (* a.b *)
+  | Dot
   (* Boolean operators *)
   | And
   | Or
@@ -66,34 +76,40 @@ let seperators = [
   (")", ClosedParen);
   ("[", OpenBracket);
   ("]", ClosedBracket);
-  ("\n", Newline)
+  ("\n", Newline);
 ];;
 
 let operators = [
-  (">=", Geq);
-  ("<=", Leq);
+  (">=", Ge);
+  ("<=", Le);
   ("==", Deq);
-  ("<", Le);
-  (">", Ge);
+  ("<", Lt);
+  (">", Gt);
   ("=", Eq);
   ("+", Add);
   ("-", Sub);
   ("*", Mul);
   ("/", Div);
+  ("//", IntDiv);
   ("%", Mod);
-  ("&&", And);
-  ("||", Or);
+  ("and", And);
+  ("or", Or);
   ("^", Xor);
-  (".", Dot)
+  (".", Dot);
+  ("inclusive", Inclusive);
+  ("to", To);
+  ("downto", To);
+  (",", Comma);
+  ("return", Return)
 ];;
 
 let keywords = [
  ("for", For);
+ ("while", While);
+ ("function", Function);
  ("if", If);
- ("inclusive", Inclusive);
+ ("else", Else);
  ("end", End);
- ("then", Then);
- ("return", Return);
 ];;
 
 (* Hopefully this is equal to ^[a-zA-Z][a-zA-Z0-9_]* because I only know normal regex lmao *)
